@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"path"
+	"strconv"
 	"sync"
 )
 
@@ -14,14 +16,14 @@ type error struct {
 type coaster struct {
 	Name         string `json:"name"`
 	Manufacturer string `json:"manufacturer"`
-	ID           string `json:"id"`
+	ID           int    `json:"id"`
 	InPark       string `json:"inPark"`
 	Height       int    `json:"height"`
 }
 
-type coastersHandlers struct {
+type coastersHandler struct {
 	sync.Mutex
-	store map[string]coaster
+	store map[int]coaster
 }
 
 func jsonERROR(w http.ResponseWriter, error interface{}, code int) {
@@ -31,19 +33,19 @@ func jsonERROR(w http.ResponseWriter, error interface{}, code int) {
 	json.NewEncoder(w).Encode(error)
 }
 
-func newCoasterHandlers() *coastersHandlers {
-	return &coastersHandlers{store: map[string]coaster{
-		"id1": {
+func newCoasterHandlers() *coastersHandler {
+	return &coastersHandler{store: map[int]coaster{
+		1: {
 			Name:         "Fury 325",
 			Manufacturer: "B+M",
-			ID:           "id1",
+			ID:           1,
 			InPark:       "Luna Park",
 			Height:       102,
 		},
 	}}
 }
 
-func (h *coastersHandlers) coasters(w http.ResponseWriter, r *http.Request) {
+func (h *coastersHandler) coasters(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
 		h.get(w, r)
@@ -57,11 +59,11 @@ func (h *coastersHandlers) coasters(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *coastersHandlers) get(w http.ResponseWriter, r *http.Request) {
+func (h *coastersHandler) get(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(h.store)
 }
 
-func (h *coastersHandlers) post(w http.ResponseWriter, r *http.Request) {
+func (h *coastersHandler) post(w http.ResponseWriter, r *http.Request) {
 
 	var coaster coaster
 
@@ -77,10 +79,28 @@ func (h *coastersHandlers) post(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(h.store[coaster.ID])
 }
 
+func (h *coastersHandler) getCoaster(w http.ResponseWriter, r *http.Request) {
+
+	id, err := strconv.ParseInt(path.Base(r.URL.String()), 10, 0)
+
+	if err != nil {
+		jsonERROR(w, error{true, "Invalid coaster id"}, http.StatusBadRequest)
+		return
+	}
+
+	if coaster, ok := h.store[int(id)]; ok {
+		json.NewEncoder(w).Encode(coaster)
+		return
+	}
+	jsonERROR(w, error{true, "coaster not found"}, http.StatusBadRequest)
+}
+
 func main() {
 
 	coasterHandlers := newCoasterHandlers()
 
 	http.HandleFunc("/coasters", coasterHandlers.coasters)
+	http.HandleFunc("/coaster/", coasterHandlers.getCoaster)
+
 	http.ListenAndServe(":9000", nil)
 }
