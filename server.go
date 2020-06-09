@@ -1,11 +1,11 @@
 package main
 
 import (
-	"encoding/json"
 	"net/http"
-	"path"
 	"strconv"
 	"sync"
+
+	"github.com/gofiber/fiber"
 )
 
 type error struct {
@@ -26,13 +26,6 @@ type coastersHandler struct {
 	store map[int]coaster
 }
 
-func jsonERROR(w http.ResponseWriter, error interface{}, code int) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(error)
-}
-
 func newCoasterHandlers() *coastersHandler {
 	return &coastersHandler{store: map[int]coaster{
 		1: {
@@ -45,62 +38,56 @@ func newCoasterHandlers() *coastersHandler {
 	}}
 }
 
-func (h *coastersHandler) coasters(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "GET":
-		h.get(w, r)
-		return
-	case "POST":
-		h.post(w, r)
-		return
-	default:
-		jsonERROR(w, error{true, "method not allowed"}, http.StatusMethodNotAllowed)
+func (h *coastersHandler) getCoasters(c *fiber.Ctx) {
+	c.JSON(h.store)
+}
+
+func (h *coastersHandler) getCoaster(c *fiber.Ctx) {
+
+	id, err := strconv.ParseInt(c.Params("id"), 10, 0)
+
+	if err != nil {
+		c.Status(http.StatusNotFound).JSON(error{true, "Invalid coaster id"})
 		return
 	}
+
+	if coaster, ok := h.store[int(id)]; ok {
+		c.JSON(coaster)
+		return
+	}
+	c.Status(http.StatusNotFound).JSON(error{true, "Coaster ID not found"})
 }
 
-func (h *coastersHandler) get(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(h.store)
-}
-
-func (h *coastersHandler) post(w http.ResponseWriter, r *http.Request) {
+func (h *coastersHandler) addCoaster(c *fiber.Ctx) {
 
 	var coaster coaster
 
-	err := json.NewDecoder(r.Body).Decode(&coaster)
+	err := c.BodyParser(&coaster)
 	if err != nil {
-		jsonERROR(w, error{true, "Invalid coaster body"}, http.StatusBadRequest)
+		c.Status(http.StatusBadRequest).JSON(error{true, "Invalid coaster data"})
 		return
 	}
 
 	h.Lock()
 	h.store[coaster.ID] = coaster
 	defer h.Unlock()
-	json.NewEncoder(w).Encode(h.store[coaster.ID])
+	c.JSON(h.store[coaster.ID])
 }
 
-func (h *coastersHandler) getCoaster(w http.ResponseWriter, r *http.Request) {
+func setupRoutes(app *fiber.App) {
 
-	id, err := strconv.ParseInt(path.Base(r.URL.String()), 10, 0)
+	coasterHandlers := newCoasterHandlers()
 
-	if err != nil {
-		jsonERROR(w, error{true, "Invalid coaster id"}, http.StatusBadRequest)
-		return
-	}
+	app.Get("/coasters", coasterHandlers.getCoasters)
+	app.Post("/coasters", coasterHandlers.addCoaster)
+	app.Get("/coasters/:id", coasterHandlers.getCoaster)
 
-	if coaster, ok := h.store[int(id)]; ok {
-		json.NewEncoder(w).Encode(coaster)
-		return
-	}
-	jsonERROR(w, error{true, "coaster not found"}, http.StatusBadRequest)
 }
 
 func main() {
 
-	coasterHandlers := newCoasterHandlers()
+	app := fiber.New()
+	setupRoutes(app)
+	app.Listen(9000)
 
-	http.HandleFunc("/coasters", coasterHandlers.coasters)
-	http.HandleFunc("/coaster/", coasterHandlers.getCoaster)
-
-	http.ListenAndServe(":9000", nil)
 }
