@@ -74,6 +74,7 @@ func (h *coastersHandlers) post(w http.ResponseWriter, r *http.Request) {
 	h.Lock()
 	h.store[coaster.ID] = coaster
 	defer h.Unlock()
+	json.NewEncoder(w).Encode(h.store[coaster.ID])
 }
 
 func main() {
